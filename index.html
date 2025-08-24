@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flappy Oranges</title>
+    <link rel="stylesheet" href="style.css">
+
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas" width="500" height="700"></canvas>
+        <div id="score-display">0</div>
+        
+        <div id="start-screen">
+            <h1>Flappy Oranges</h1>
+            <p class="instructions">Tap to make the orange jump! Avoid the trees and don't fall down.</p>
+            <button id="start-button">Start Game</button>
+        </div>
+        
+        <div id="game-over">
+            <h1>Game Over</h1>
+            <p class="final-score">Score: <span id="final-score">0</span></p>
+            <button id="restart-button">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Game elements
+            const canvas = document.getElementById('game-canvas');
+            const ctx = canvas.getContext('2d');
+            const scoreDisplay = document.getElementById('score-display');
+            const startScreen = document.getElementById('start-screen');
+            const gameOverScreen = document.getElementById('game-over');
+            const finalScoreElement = document.getElementById('final-score');
+            const startButton = document.getElementById('start-button');
+            const restartButton = document.getElementById('restart-button');
+            
+            // Adjust canvas size for mobile devices
+            function resizeCanvas() {
+                const container = document.getElementById('game-container');
+                if (window.innerWidth < 500) {
+                    canvas.width = window.innerWidth - 40;
+                    canvas.height = window.innerHeight - 100;
+                } else {
+                    canvas.width = 500;
+                    canvas.height = 700;
+                }
+            }
+            
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+            
+            // Game variables
+            let score = 0;
+            let gameRunning = false;
+            let frames = 0;
+            
+            // Orange properties
+            const orange = {
+                x: 50,
+                y: canvas.height / 2,
+                width: 40,
+                height: 40,
+                gravity: 0.5,
+                velocity: 0,
+                jump: -9,
+                
+                draw: function() {
+                    // Draw the orange
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.width/2, 0, Math.PI * 2);
+                    ctx.fillStyle = '#FF9800';
+                    ctx.fill();
+                    ctx.closePath();
+                    
+                    // Draw leaf
+                    ctx.beginPath();
+                    ctx.moveTo(this.x - 10, this.y - 20);
+                    ctx.quadraticCurveTo(this.x - 15, this.y - 30, this.x, this.y - 25);
+                    ctx.fillStyle = 'green';
+                    ctx.fill();
+                    ctx.closePath();
+                },
+                
+                update: function() {
+                    // Apply gravity
+                    this.velocity += this.gravity;
+                    this.y += this.velocity;
+                    
+                    // Floor collision
+                    if (this.y + this.height/2 > canvas.height) {
+                        this.y = canvas.height - this.height/2;
+                        gameOver();
+                    }
+                    
+                    // Ceiling collision
+                    if (this.y - this.height/2 < 0) {
+                        this.y = this.height/2;
+                        this.velocity = 0;
+                    }
+                },
+                
+                flap: function() {
+                    this.velocity = this.jump;
+                },
+                
+                reset: function() {
+                    this.y = canvas.height / 2;
+                    this.velocity = 0;
+                }
+            };
+            
+            // Trees (pipes) properties
+            const trees = {
+                position: [],
+                
+                // Tree properties
+                top: {
+                    width: 70,
+                    minHeight: 20,
+                    maxHeight: 300
+                },
+                
+                bottom: {
+                    width: 70,
+                    gap: 200
+                },
+                
+                // Add new tree pair
+                add: function() {
+                    const height = Math.floor(Math.random() * (this.top.maxHeight - this.top.minHeight + 1)) + this.top.minHeight;
+                    
+                    this.position.push({
+                        x: canvas.width,
+                        y: 0,
+                        width: this.top.width,
+                        height: height,
+                        scored: false
+                    });
+                    
+                    this.position.push({
+                        x: canvas.width,
+                        y: height + this.bottom.gap,
+                        width: this.bottom.width,
+                        height: canvas.height - height - this.bottom.gap,
+                        scored: false
+                    });
+                },
+                
+                // Draw trees
+                draw: function() {
+                    for (let i = 0; i < this.position.length; i++) {
+                        const tree = this.position[i];
+                        
+                        // Draw tree trunk
+                        ctx.fillStyle = '#5D4037';
+                        ctx.fillRect(tree.x, tree.y, tree.width, tree.height);
+                        
+                        // Draw tree foliage (top trees only)
+                        if (tree.y === 0) {
+                            ctx.beginPath();
+                            ctx.fill();
+                            ctx.closePath();
+                            
+                        
+                        }
+                    }
+                },
+                
+                // Update trees
+                update: function() {
+                    if (gameRunning) {
+                        // Add new tree pair every 150 frames
+                        if (frames % 150 === 0) {
+                            this.add();
+                        }
+                        
+                        for (let i = 0; i < this.position.length; i++) {
+                            const tree = this.position[i];
+                            
+                            // Move trees to the left
+                            tree.x -= 2;
+                            
+                            // Remove trees that are off-screen
+                            if (tree.x + tree.width < 0) {
+                                this.position.splice(i, 1);
+                                i--;
+                                continue;
+                            }
+                            
+                            // Check for collision with orange
+                            if (
+                                orange.x + orange.width/2 > tree.x &&
+                                orange.x - orange.width/2 < tree.x + tree.width &&
+                                (
+                                    (orange.y - orange.height/2 < tree.height && tree.y === 0) ||
+                                    (orange.y + orange.height/2 > tree.y && tree.y !== 0)
+                                )
+                            ) {
+                                gameOver();
+                                return;
+                            }
+                            
+                            // Score point when orange passes a tree pair
+                            if (!tree.scored && tree.y !== 0 && orange.x > tree.x + tree.width) {
+                                tree.scored = true;
+                                score++;
+                                scoreDisplay.textContent = score;
+                            }
+                        }
+                    }
+                },
+                
+                // Reset trees
+                reset: function() {
+                    this.position = [];
+                }
+            };
+            
+            // Background elements
+            const background = {
+                draw: function() {
+                    // Draw sky
+                    ctx.fillStyle = "gray";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Draw sun
+                    ctx.beginPath();
+                    ctx.arc(canvas.width - 50, 50, 30, 0, Math.PI * 2);
+                    ctx.fillStyle = '#FFEB3B';
+                    ctx.fill();
+                    ctx.closePath();
+                    
+                    // Draw clouds
+                    ctx.beginPath();
+                    ctx.arc(100, 80, 25, 0, Math.PI * 2);
+                    ctx.arc(130, 70, 30, 0, Math.PI * 2);
+                    ctx.arc(160, 80, 25, 0, Math.PI * 2);
+                    ctx.fillStyle = 'white';
+                    ctx.fill();
+                    ctx.closePath();
+                    
+                    ctx.beginPath();
+                    ctx.arc(300, 120, 20, 0, Math.PI * 2);
+                    ctx.arc(330, 110, 25, 0, Math.PI * 2);
+                    ctx.arc(360, 120, 20, 0, Math.PI * 2);
+                    ctx.fillStyle = 'white';
+                    ctx.fill();
+                    ctx.closePath();
+                    
+                    // Draw ground
+                    ctx.fillStyle = '#8BC34A';
+                    ctx.fillRect(0, canvas.height - 20, canvas.width, 20);
+                }
+            };
+            
+            // Game functions
+            function startGame() {
+                score = 0;
+                scoreDisplay.textContent = score;
+                gameRunning = true;
+                frames = 0;
+                orange.reset();
+                trees.reset();
+                startScreen.style.display = 'none';
+                gameOverScreen.style.display = 'none';
+                gameLoop();
+            }
+            
+            function gameOver() {
+                gameRunning = false;
+                finalScoreElement.textContent = score;
+                gameOverScreen.style.display = 'flex';
+            }
+            
+            function gameLoop() {
+                // Clear canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw background
+                background.draw();
+                
+                // Update and draw trees
+                trees.update();
+                trees.draw();
+                
+                // Update and draw orange
+                orange.update();
+                orange.draw();
+                
+                // Increase frame count
+                frames++;
+                
+                // Continue game loop if game is running
+                if (gameRunning) {
+                    requestAnimationFrame(gameLoop);
+                }
+            }
+            
+            // Event listeners
+            startButton.addEventListener('click', startGame);
+            restartButton.addEventListener('click', startGame);
+            
+            // Touch controls for mobile
+            canvas.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                if (gameRunning) {
+                    orange.flap();
+                }
+            });
+            
+            // Mouse controls for desktop testing
+            canvas.addEventListener('mousedown', function() {
+                if (gameRunning) {
+                    orange.flap();
+                }
+            });
+            
+            // Spacebar controls for desktop testing
+            document.addEventListener('keydown', function(e) {
+                if (e.code === 'Space' && gameRunning) {
+                    orange.flap();
+                    e.preventDefault();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
